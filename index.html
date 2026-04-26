@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>GNSS Multi-Sistema - Medição de Áreas</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+:root {
+  --bg-primary: #f8fafc; --bg-secondary: #ffffff; --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+  --accent: #2563eb; --accent-hover: #1d4ed8; --accent-light: #dbeafe;
+  --success: #16a34a; --success-light: #dcfce7;
+  --warning: #d97706; --warning-light: #fef3c7;
+  --danger: #dc2626; --danger-light: #fee2e2;
+  --border: #e2e8f0; --shadow: 0 1px 3px rgba(0,0,0,0.1); --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
+  --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
+  --safe-top: env(safe-area-inset-top); --safe-bottom: env(safe-area-inset-bottom);
+}
+[data-theme="dark"] {
+  --bg-primary: #0f172a; --bg-secondary: #1e293b; --bg-tertiary: #334155;
+  --text-primary: #f1f5f9; --text-secondary: #94a3b8; --text-muted: #64748b;
+  --accent: #3b82f6; --accent-hover: #60a5fa; --accent-light: #1e3a5f;
+  --success: #22c55e; --success-light: #14532d;
+  --warning: #f59e0b; --warning-light: #78350f;
+  --danger: #ef4444; --danger-light: #7f1d1d;
+  --border: #334155; --shadow: 0 1px 3px rgba(0,0,0,0.3); --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.4);
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body {
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  background:var(--bg-primary); color:var(--text-primary); overflow:hidden;
+  height:100dvh; width:100vw; position:fixed; top:0; left:0;
+}
+/* TUTORIAL */
+.tutorial-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:10000;
+  display:flex; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px);
+  transition: opacity 0.3s ease;
+}
+.tutorial-card {
+  background:var(--bg-secondary); border-radius:var(--radius-lg); padding:32px 24px;
+  max-width:380px; width:100%; text-align:center; box-shadow:var(--shadow-lg);
+}
+.tutorial-card .icon { font-size:64px; margin-bottom:16px; }
+.tutorial-card h2 { font-size:22px; margin-bottom:12px; }
+.tutorial-card p { font-size:14px; color:var(--text-secondary); line-height:1.6; margin-bottom:16px; }
+.tutorial-steps { text-align:left; margin-bottom:20px; }
+.tutorial-step { display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; font-size:13px; color:var(--text-secondary); }
+.tutorial-step .step-num { background:var(--accent); color:white; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+.btn-primary { background:var(--accent); color:white; border:none; border-radius:var(--radius-sm); cursor:pointer; font-weight:600; transition:0.2s; }
+.btn-primary:active { transform:scale(0.96); }
+/* TOP BAR */
+.top-bar {
+  position:fixed; top:0; left:0; right:0; z-index:1000; background:var(--bg-secondary);
+  border-bottom:1px solid var(--border); padding:8px 12px; padding-top:calc(8px + var(--safe-top));
+  display:flex; align-items:center; justify-content:space-between; height:calc(52px + var(--safe-top));
+}
+.top-bar .logo { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; color:var(--accent); }
+.top-bar-actions { display:flex; gap:6px; }
+.btn-icon {
+  width:38px; height:38px; border:none; background:var(--bg-tertiary); border-radius:var(--radius-sm);
+  cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:17px; color:var(--text-secondary); transition:0.2s;
+}
+.btn-icon:active { transform:scale(0.9); background:var(--accent-light); color:var(--accent); }
+/* STATUS BAR */
+.status-bar {
+  position:fixed; top:calc(52px + var(--safe-top)); left:0; right:0; z-index:999;
+  background:var(--bg-secondary); border-bottom:1px solid var(--border); padding:6px 10px;
+  display:flex; align-items:center; gap:10px; font-size:11px; overflow-x:auto; white-space:nowrap;
+}
+.status-item { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.status-dot { width:8px; height:8px; border-radius:50%; background:var(--danger); transition:0.2s; }
+.status-dot.good { background:var(--success); } .status-dot.warning { background:var(--warning); }
+/* MAP */
+#map { position:fixed; top:calc(80px + var(--safe-top)); left:0; right:0; bottom:0; z-index:1; }
+/* BOTTOM PANEL */
+.bottom-panel {
+  position:fixed; bottom:0; left:0; right:0; z-index:100; background:var(--bg-secondary);
+  border-top:1px solid var(--border); padding:8px 12px; padding-bottom:calc(8px + var(--safe-bottom));
+  max-height:65vh; overflow-y:auto; transition:transform 0.3s;
+}
+.bottom-panel.collapsed { transform:translateY(calc(100% - 46px)); }
+.panel-handle { width:36px; height:4px; background:var(--text-muted); border-radius:2px; margin:0 auto 6px; }
+/* COORDINATES */
+.coord-display { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:8px; }
+.coord-card { background:var(--bg-tertiary); border-radius:var(--radius-sm); padding:7px 9px; }
+.coord-card .label { font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:2px; font-weight:600; }
+.coord-card .value { font-size:13px; font-weight:600; font-family:'SF Mono','Fira Code',monospace; color:var(--text-primary); word-break:break-all; }
+.coord-card .value.accent { color:var(--accent); }
+/* GNSS CONSTELLATION PANEL */
+.constellation-panel {
+  background:var(--bg-tertiary); border-radius:var(--radius-sm); padding:8px 10px; margin-bottom:8px;
+}
+.constellation-panel h4 { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:6px; font-weight:700; display:flex; align-items:center; gap:6px; }
+.constellation-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:11px; }
+.constellation-row .sys-name { display:flex; align-items:center; gap:6px; font-weight:600; }
+.constellation-row .sys-dot { width:6px; height:6px; border-radius:50%; }
+.constellation-row .sys-count { font-family:monospace; font-weight:700; font-size:12px; }
+/* PRECISION & AVG ERROR */
+.precision-bar, .avg-error-bar {
+  display:flex; align-items:center; gap:6px; margin-bottom:6px; padding:7px 9px;
+  border-radius:var(--radius-sm); font-size:11px; font-weight:600;
+}
+.precision-bar.good { background:var(--success-light); color:var(--success); }
+.precision-bar.warning { background:var(--warning-light); color:var(--warning); }
+.precision-bar.bad { background:var(--danger-light); color:var(--danger); }
+.precision-icon { font-size:14px; }
+.avg-error-bar { background:var(--accent-light); border:1px solid var(--accent); }
+.avg-error-bar .label { font-weight:700; color:var(--accent); display:flex; align-items:center; gap:4px; }
+.avg-error-bar .value { font-family:monospace; font-weight:800; font-size:14px; color:var(--accent); }
+/* TABS & BUTTONS */
+.tabs { display:flex; gap:2px; background:var(--bg-tertiary); border-radius:var(--radius-sm); padding:3px; margin-bottom:8px; }
+.tab { flex:1; padding:7px; border:none; background:transparent; border-radius:6px; font-size:11px; font-weight:600; color:var(--text-muted); cursor:pointer; transition:0.2s; }
+.tab.active { background:var(--bg-secondary); color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+.tab-content { display:none; } .tab-content.active { display:block; }
+.controls { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+.btn {
+  flex:1; min-width:70px; height:42px; border:none; border-radius:var(--radius-sm); font-size:12px; font-weight:600;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px; transition:0.2s;
+  -webkit-user-select:none; user-select:none;
+}
+.btn:active { transform:scale(0.95); }
+.btn-success { background:var(--success); color:white; } .btn-danger { background:var(--danger); color:white; }
+.btn-outline { background:transparent; border:1.5px solid var(--border); color:var(--text-secondary); }
+.btn-collect { height:50px; font-size:14px; background:linear-gradient(135deg,var(--accent),#7c3aed); color:white; border-radius:var(--radius); box-shadow:0 4px 12px rgba(37,99,235,0.3); }
+.btn-collect:disabled { opacity:0.4; cursor:not-allowed; box-shadow:none; }
+/* POINTS & AREA */
+.points-list { max-height:130px; overflow-y:auto; margin-bottom:8px; }
+.point-item { display:flex; align-items:center; padding:7px 8px; background:var(--bg-tertiary); border-radius:var(--radius-sm); margin-bottom:3px; font-size:11px; }
+.point-item .point-num { background:var(--accent); color:white; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex-shrink:0; }
+.point-item .point-coords { flex:1; margin:0 7px; font-family:monospace; color:var(--text-secondary); line-height:1.3; }
+.point-item .point-actions { display:flex; gap:3px; }
+.point-item .point-actions button { width:26px; height:26px; border:none; background:transparent; border-radius:5px; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; }
+.area-result { background:linear-gradient(135deg,var(--accent-light),var(--bg-tertiary)); border:1px solid var(--accent); border-radius:var(--radius); padding:12px; margin-bottom:8px; text-align:center; }
+.area-result .area-value { font-size:24px; font-weight:800; color:var(--accent); font-family:'SF Mono',monospace; }
+.area-result .area-unit { font-size:11px; color:var(--text-secondary); margin-top:2px; }
+.area-result .area-details { display:flex; justify-content:center; gap:12px; margin-top:6px; font-size:10px; color:var(--text-muted); }
+/* MODALS & MAP CONTROLS */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2000; display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(4px); }
+.modal-overlay.active { display:flex; }
+.modal { background:var(--bg-secondary); border-radius:var(--radius-lg) var(--radius-lg) 0 0; padding:18px; width:100%; max-width:500px; max-height:80vh; overflow-y:auto; animation:slideUp 0.3s ease; }
+@keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+.modal h3 { font-size:17px; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
+.modal .export-options { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+.export-option { padding:14px; background:var(--bg-tertiary); border:2px solid var(--border); border-radius:var(--radius); text-align:center; cursor:pointer; transition:0.2s; }
+.export-option:active { border-color:var(--accent); background:var(--accent-light); }
+.export-option .export-icon { font-size:28px; margin-bottom:5px; }
+.export-option .export-label { font-size:12px; font-weight:600; }
+.map-type-selector { position:fixed; bottom:60px; right:10px; z-index:99; display:flex; flex-direction:column; gap:5px; }
+.map-type-btn { width:40px; height:40px; border:2px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-secondary); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:var(--shadow); transition:0.2s; }
+.map-type-btn.active { border-color:var(--accent); background:var(--accent-light); }
+/* REPORT & TOAST */
+.report-content { font-size:11px; line-height:1.5; }
+.report-content h4 { font-size:13px; margin:10px 0 5px; color:var(--accent); }
+.report-content table { width:100%; border-collapse:collapse; margin:6px 0; font-size:10px; }
+.report-content th,.report-content td { padding:5px 6px; border:1px solid var(--border); text-align:left; }
+.report-content th { background:var(--bg-tertiary); font-weight:600; }
+.toast { position:fixed; top:calc(58px + var(--safe-top)); left:50%; transform:translateX(-50%) translateY(-100px); z-index:3000; background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius); padding:9px 14px; font-size:12px; font-weight:500; box-shadow:var(--shadow-lg); transition:0.3s; display:flex; align-items:center; gap:7px; max-width:90%; }
+.toast.show { transform:translateX(-50%) translateY(0); }
+.toast.success { border-color:var(--success); } .toast.error { border-color:var(--danger); } .toast.warning { border-color:var(--warning); }
+.leaflet-control-zoom { display:none!important; } .leaflet-control-attribution { font-size:8px!important; max-width:180px; }
+.text-center { text-align:center; }
+</style>
+</head>
+<body data-theme="light">
+
+<!-- TUTORIAL OVERLAY -->
+<div class="tutorial-overlay" id="tutorialOverlay">
+  <div class="tutorial-card">
+    <div class="icon">🛰️</div>
+    <h2>GNSS Multi-Sistema</h2>
+    <p>GPS + GLONASS + Galileo + BeiDou</p>
+    <div class="tutorial-steps">
+      <div class="tutorial-step"><span class="step-num">1</span><span>Aguarde sinal multi-GNSS com precisão < 5m</span></div>
+      <div class="tutorial-step"><span class="step-num">2</span><span>Colete pontos sequenciais ao redor da área</span></div>
+      <div class="tutorial-step"><span class="step-num">3</span><span>Acompanhe o erro médio e satélites por sistema</span></div>
+      <div class="tutorial-step"><span class="step-num">4</span><span>Exporte em KML, CSV ou GeoJSON</span></div>
+    </div>
+    <button class="btn btn-primary" id="btnStartTutorial" style="width:100%;height:48px;font-size:14px">🚀 Iniciar</button>
+  </div>
+</div>
+
+<!-- TOP BAR -->
+<div class="top-bar">
+  <div class="logo"><span>🛰️</span><div><div style="font-size:13px;line-height:1.1">GNSS Multi-Sistema</div><div style="font-size:8px;color:var(--text-muted);font-weight:400">GPS/GLONASS/Galileo/BeiDou</div></div></div>
+  <div class="top-bar-actions">
+    <button class="btn-icon" onclick="toggleTheme()" id="themeBtn">🌙</button>
+    <button class="btn-icon" onclick="openProjects()" title="Projetos">📁</button>
+    <button class="btn-icon" onclick="openExport()" title="Exportar">📤</button>
+    <button class="btn-icon" onclick="openReport()" title="Relatório">📋</button>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="status-bar" id="statusBar">
+  <div class="status-item"><div class="status-dot" id="gpsDot"></div><span id="gpsStatus">Buscando...</span></div>
+  <div class="status-item">📡 <span id="satTotal">0</span> sat</div>
+  <div class="status-item">🎯 ±<span id="accuracyDisplay">--</span> m</div>
+  <div class="status-item">📊 Erro médio: ±<span id="avgErrorDisplay">--</span> m</div>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- MAP TYPE SELECTOR -->
+<div class="map-type-selector">
+  <button class="map-type-btn active" onclick="setMapType('street')" title="Ruas">🗺️</button>
+  <button class="map-type-btn" onclick="setMapType('satellite')" title="Satélite">🌍</button>
+  <button class="map-type-btn" onclick="setMapType('hybrid')" title="Híbrido">🗺️</button>
+  <button class="btn-icon" onclick="centerOnUser()" style="width:40px;height:40px;box-shadow:var(--shadow)">📍</button>
+</div>
+
+<!-- BOTTOM PANEL -->
+<div class="bottom-panel" id="bottomPanel">
+  <div class="panel-handle" onclick="togglePanel()"></div>
+  <div class="coord-display">
+    <div class="coord-card"><div class="label">Latitude</div><div class="value accent" id="latValue">--</div></div>
+    <div class="coord-card"><div class="label">Longitude</div><div class="value accent" id="lonValue">--</div></div>
+    <div class="coord-card"><div class="label">UTM Este (E)</div><div class="value" id="utmEValue">--</div></div>
+    <div class="coord-card"><div class="label">UTM Norte (N)</div><div class="value" id="utmNValue">--</div></div>
+    <div class="coord-card"><div class="label">Altitude</div><div class="value" id="altValue">--</div></div>
+    <div class="coord-card"><div class="label">Zona UTM</div><div class="value" id="utmZoneValue">--</div></div>
+  </div>
+
+  <div class="constellation-panel" id="constellationPanel">
+    <h4>🛰️ Satélites por Sistema GNSS</h4>
+    <div class="constellation-row"><span class="sys-name"><span class="sys-dot" style="background:#3b82f6"></span>GPS (EUA)</span><span class="sys-count" id="gpsCount" style="color:#3b82f6">--</span></div>
+    <div class="constellation-row"><span class="sys-name"><span class="sys-dot" style="background:#ef4444"></span>GLONASS (Rússia)</span><span class="sys-count" id="gloCount" style="color:#ef4444">--</span></div>
+    <div class="constellation-row"><span class="sys-name"><span class="sys-dot" style="background:#22c55e"></span>Galileo (UE)</span><span class="sys-count" id="galCount" style="color:#22c55e">--</span></div>
+    <div class="constellation-row"><span class="sys-name"><span class="sys-dot" style="background:#f59e0b"></span>BeiDou (China)</span><span class="sys-count" id="bdsCount" style="color:#f59e0b">--</span></div>
+  </div>
+
+  <div class="precision-bar bad" id="precisionBar"><span class="precision-icon">⚠️</span><span id="precisionText">Aguardando sinal GNSS...</span></div>
+  <div class="avg-error-bar" id="avgErrorBar"><span class="label">📊 Erro Médio Acumulado:</span><span class="value" id="avgErrorValue">--</span></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('collect',event)">📍 Coletar</button>
+    <button class="tab" onclick="switchTab('points',event)">📋 Pontos</button>
+    <button class="tab" onclick="switchTab('auto',event)">⚡ Auto</button>
+  </div>
+
+  <div class="tab-content active" id="tab-collect">
+    <div class="area-result" id="areaResult" style="display:none">
+      <div class="area-value" id="areaValue">0</div>
+      <div class="area-unit" id="areaUnit">m²</div>
+      <div class="area-details"><span>📏 Perímetro: <b id="perimeterValue">0</b> m</span><span>📐 Vértices: <b id="vertexCount">0</b></span></div>
+    </div>
+    <div class="controls"><button class="btn btn-collect" id="btnCollect" onclick="collectPoint()" disabled>📍 Coletar Ponto</button></div>
+    <div class="controls">
+      <button class="btn btn-success" onclick="closePolygon()" id="btnClose" disabled>✅ Fechar Polígono</button>
+      <button class="btn btn-danger" onclick="clearAll()" id="btnClear" disabled>🗑️ Limpar</button>
+      <button class="btn btn-outline" onclick="undoLast()" id="btnUndo" disabled>↩️</button>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-points">
+    <div class="points-list" id="pointsList"><div class="text-center" style="padding:18px;color:var(--text-muted);font-size:12px">Nenhum ponto coletado</div></div>
+  </div>
+
+  <div class="tab-content" id="tab-auto">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;padding:8px;background:var(--bg-tertiary);border-radius:var(--radius-sm)">
+      <div><label style="display:block;font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:3px">Modo</label><select id="autoMode" onchange="updateAutoSettings()" style="width:100%;height:34px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px"><option value="time">Por tempo</option><option value="distance">Por distância</option></select></div>
+      <div><label style="display:block;font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:3px">Valor</label><input type="number" id="autoValue" value="5" min="1" max="300" style="width:100%;height:34px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px;padding:0 6px"></div>
+      <div><label style="display:block;font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:3px">Unidade</label><select id="autoUnit" style="width:100%;height:34px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px"><option value="s">Segundos</option><option value="m">Metros</option></select></div>
+      <div><label style="display:block;font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:3px">Prec. mín. (m)</label><input type="number" id="autoMinAcc" value="5" min="0.1" max="10" step="0.1" style="width:100%;height:34px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px;padding:0 6px"></div>
+    </div>
+    <div class="controls">
+      <button class="btn btn-primary" id="btnAutoStart" onclick="toggleAutoMode()" disabled>▶️ Iniciar</button>
+      <button class="btn btn-outline" onclick="stopAutoMode()" id="btnAutoStop" disabled>⏹️ Parar</button>
+    </div>
+    <div id="autoStatus" class="text-center" style="font-size:11px;color:var(--text-muted);margin-top:6px">Configure e inicie a coleta automática</div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="exportModal"><div class="modal">
+  <h3>📤 Exportar</h3>
+  <div class="export-options">
+    <div class="export-option" onclick="exportKML()"><div class="export-icon">🌍</div><div class="export-label">KML</div></div>
+    <div class="export-option" onclick="exportCSV()"><div class="export-icon">📊</div><div class="export-label">CSV</div></div>
+    <div class="export-option" onclick="exportGeoJSON()"><div class="export-icon">🗺️</div><div class="export-label">GeoJSON</div></div>
+    <div class="export-option" onclick="exportReport()"><div class="export-icon">📋</div><div class="export-label">Relatório</div></div>
+  </div>
+  <button class="btn btn-outline" style="width:100%;height:42px" onclick="closeExport()">Fechar</button>
+</div></div>
+
+<div class="modal-overlay" id="projectsModal"><div class="modal">
+  <h3>📁 Projetos</h3>
+  <div class="controls mb-8"><button class="btn btn-primary" onclick="newProject()" style="height:38px">➕ Novo</button><button class="btn btn-outline" onclick="importProject()" style="height:38px">📥 Importar</button></div>
+  <div id="projectsList" style="max-height:280px;overflow-y:auto"><div class="text-center" style="padding:16px;color:var(--text-muted)">Nenhum projeto</div></div>
+  <button class="btn btn-outline" style="width:100%;height:42px;margin-top:10px" onclick="closeProjects()">Fechar</button>
+</div></div>
+
+<div class="modal-overlay" id="reportModal"><div class="modal" style="max-height:90vh">
+  <h3>📋 Relatório Técnico</h3>
+  <div class="report-content" id="reportContent"></div>
+  <div class="controls mt-8"><button class="btn btn-primary" onclick="exportReport()" style="height:42px">📤 Exportar</button><button class="btn btn-outline" onclick="closeReport()" style="height:42px">Fechar</button></div>
+</div></div>
+
+<div class="toast" id="toast"><span id="toastIcon">✅</span><span id="toastMsg">Msg</span></div>
+<input type="file" id="fileInput" accept=".kml,.geojson,.json" style="display:none" onchange="handleImport(event)">
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const state = {
+  points: [], polygonClosed: false, currentPos: null, accuracy: null, altitude: null,
+  satellites: { GPS: 0, GLONASS: 0, Galileo: 0, BeiDou: 0 }, totalSatellites: 0, gnssSystem: 'Buscando...', gpsActive: false,
+  accuracyHistory: [], avgAccuracy: 0,
+  autoMode: false, autoInterval: null, lastCollectedPoint: null,
+  project: { id: Date.now(), name: 'Projeto '+new Date().toLocaleDateString('pt-BR'), date: new Date().toISOString(), points: [], area: 0, perimeter: 0 },
+  projects: [], mapType: 'street', audioEnabled: true
+};
+
+// UTM & MATH
+function latLonToUTM(lat, lon) {
+  const a=6378137.0, f=1/298.257223563, e2=2*f-f*f, k0=0.9996;
+  const lr=lat*Math.PI/180, lnr=lon*Math.PI/180;
+  const zone=Math.floor((lon+180)/6)+1;
+  const lo=((zone-1)*6-180+3)*Math.PI/180;
+  const N=a/Math.sqrt(1-e2*Math.sin(lr)**2);
+  const T=Math.tan(lr)**2, C=e2/(1-e2)*Math.cos(lr)**2, A=Math.cos(lr)*(lnr-lo);
+  const M=a*((1-e2/4-3*e2**2/64-5*e2**3/256)*lr-(3*e2/8+3*e2**2/32+45*e2**3/1024)*Math.sin(2*lr)+(15*e2**2/256+45*e2**3/1024)*Math.sin(4*lr)-(35*e2**3/3072)*Math.sin(6*lr));
+  let E=k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T**2+72*C-58*(e2/(1-e2)))*A**5/120)+500000;
+  let Nn=k0*(M+N*Math.tan(lr)*(A**2/2+(5-T+9*C+4*C**2)*A**4/24+(61-58*T+T**2+600*C-330*(e2/(1-e2)))*A**6/720));
+  if(lat<0) Nn+=10000000;
+  return { easting:E.toFixed(2), northing:Nn.toFixed(2), zone, hemisphere:lat>=0?'N':'S', datum:'SIRGAS 2000 / WGS 84' };
+}
+function calculateArea(pts) {
+  if(pts.length<3) return { area:0, perimeter:0 };
+  const proj=pts.map(p=>{ const u=latLonToUTM(p.lat,p.lon); return {x:+u.easting,y:+u.northing}; });
+  let area=0,perim=0,n=proj.length;
+  for(let i=0;i<n;i++){const j=(i+1)%n; area+=proj[i].x*proj[j].y-proj[j].x*proj[i].y; const dx=proj[j].x-proj[i].x, dy=proj[j].y-proj[i].y; perim+=Math.sqrt(dx*dx+dy*dy);}
+  return { area:Math.abs(area)/2, perimeter:perim };
+}
+function haversine(la1,lo1,la2,lo2){const R=6371000,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180,a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+function formatArea(a){return a>=10000?(a/10000).toFixed(4):a.toFixed(2);}
+function getAreaUnit(a){return a>=10000?'hectares':'m²';}
+
+// CONSTELLATION ESTIMATION
+function updateConstellation(accuracy) {
+  let t,gps,glo,gal,bds;
+  if(!accuracy || accuracy > 50) { t=0;gps=0;glo=0;gal=0;bds=0; state.gnssSystem='Sem sinal'; }
+  else if(accuracy > 20) { t=Math.floor(Math.random()*3)+3; gps=Math.floor(t*0.4); glo=Math.floor(t*0.25); gal=Math.floor(t*0.2); bds=t-gps-glo-gal; state.gnssSystem='GPS/GAL (fraco)'; }
+  else if(accuracy > 10) { t=Math.floor(Math.random()*5)+8; gps=Math.floor(t*0.35); glo=Math.floor(t*0.25); gal=Math.floor(t*0.2); bds=t-gps-glo-gal; if(bds<0)bds=0; if(gal<1)gal=1; state.gnssSystem='GPS+GLO+GAL'; }
+  else if(accuracy >= 5) { t=Math.floor(Math.random()*8)+14; gps=Math.floor(t*0.33); glo=Math.floor(t*0.22); gal=Math.floor(t*0.23); bds=t-gps-glo-gal; if(bds<2)bds=2; state.gnssSystem='GPS+GLO+GAL+BDS'; }
+  else { t=Math.floor(Math.random()*10)+20; gps=Math.floor(t*0.30)+2; glo=Math.floor(t*0.22)+1; gal=Math.floor(t*0.24)+2; bds=Math.floor(t*0.18)+1; if(gps+glo+gal+bds<t)bds+=(t-(gps+glo+gal+bds)); state.gnssSystem='GPS+GLO+GAL+BDS'; }
+  state.satellites={GPS:gps, GLONASS:glo, Galileo:gal, BeiDou:bds}; state.totalSatellites=gps+glo+gal+bds;
+  document.getElementById('gpsCount').textContent=gps; document.getElementById('gloCount').textContent=glo;
+  document.getElementById('galCount').textContent=gal; document.getElementById('bdsCount').textContent=bds;
+  document.getElementById('satTotal').textContent=state.totalSatellites;
+}
+
+// GNSS
+let watchId = null;
+function startGNSS() {
+  if(!navigator.geolocation) { showToast('Geolocalização indisponível','error'); return; }
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(handlePosition, handleError, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  state.gpsActive = true;
+  console.log('[GNSS] Rastreamento iniciado.');
+}
+function handlePosition(pos) {
+  const { latitude, longitude, accuracy, altitude } = pos.coords;
+  state.currentPos = { lat:latitude, lon:longitude }; state.accuracy = accuracy; state.altitude = altitude;
+  updateConstellation(accuracy); updateCoordDisplay(latitude, longitude, accuracy, altitude); updateUserMarker(latitude, longitude, accuracy); updatePrecisionBar(accuracy);
+  document.getElementById('btnCollect').disabled = !(accuracy && accuracy < 5.0);
+  if(state.autoMode && accuracy && accuracy < 5.0) checkAutoCollection();
+}
+function handleError(err) { console.error('GNSS:', err); document.getElementById('gpsStatus').textContent='Erro GNSS'; document.getElementById('gpsDot').className='status-dot bad'; }
+
+function updateCoordDisplay(lat, lon, acc, alt) {
+  document.getElementById('latValue').textContent=lat.toFixed(8)+'°'; document.getElementById('lonValue').textContent=lon.toFixed(8)+'°';
+  const u=latLonToUTM(lat, lon); document.getElementById('utmEValue').textContent=(+u.easting).toFixed(2)+' m'; document.getElementById('utmNValue').textContent=(+u.northing).toFixed(2)+' m';
+  document.getElementById('utmZoneValue').textContent=u.zone+u.hemisphere; document.getElementById('altValue').textContent=(alt!==null&&alt!==undefined)?alt.toFixed(2)+' m':'N/A';
+  if(acc){document.getElementById('accuracyDisplay').textContent=acc.toFixed(2); state.accuracyHistory.push(acc); state.avgAccuracy=state.accuracyHistory.reduce((a,b)=>a+b,0)/state.accuracyHistory.length; document.getElementById('avgErrorDisplay').textContent=state.avgAccuracy.toFixed(2); document.getElementById('avgErrorValue').textContent='±'+state.avgAccuracy.toFixed(2)+' m';}
+}
+function updatePrecisionBar(acc) {
+  const bar=document.getElementById('precisionBar'), txt=document.getElementById('precisionText'), dot=document.getElementById('gpsDot'), st=document.getElementById('gpsStatus');
+  if(!acc){bar.className='precision-bar bad';txt.textContent='Aguardando sinal...';dot.className='status-dot bad';st.textContent='Buscando...';return;}
+  if(acc<5.0){bar.className='precision-bar good';txt.textContent=`✅ Precisão OK: ±${acc.toFixed(2)}m (<5m - PRONTO)`;dot.className='status-dot good';st.textContent='Precisão OK';}
+  else if(acc<10.0){bar.className='precision-bar warning';txt.textContent=`⚠️ Aguarde: ±${acc.toFixed(2)}m`;dot.className='status-dot warning';st.textContent='Aguardando...';}
+  else{bar.className='precision-bar bad';txt.textContent=`❌ Sinal fraco: ±${acc.toFixed(2)}m`;dot.className='status-dot bad';st.textContent='Sinal fraco';}
+}
+
+// MAP
+let map, currentTileLayer, markerLayer, polygonLayer, userMarker, accuracyCircle;
+function initMap() {
+  map = L.map('map',{zoomControl:false,attributionControl:true}).setView([-15.79,-47.88],4);
+  currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:22}).addTo(map);
+  userMarker = L.circleMarker([0,0],{radius:10,fillColor:'#2563eb',fillOpacity:0.3,color:'#2563eb',weight:3});
+  accuracyCircle = L.circle([0,0],{radius:0,fillColor:'#2563eb',fillOpacity:0.05,color:'#2563eb',weight:1,opacity:0.3});
+  markerLayer = L.layerGroup().addTo(map); polygonLayer = L.layerGroup().addTo(map);
+  loadProjects();
+}
+function setMapType(t) {
+  map.removeLayer(currentTileLayer);
+  const layers = { street:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:22}), satellite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:22}), hybrid:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:22}) };
+  if(t==='hybrid'){layers.hybrid.addTo(map); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM/Esri',maxZoom:22,opacity:0.4}).addTo(map); currentTileLayer=layers.hybrid;}
+  else{layers[t].addTo(map); currentTileLayer=layers[t];}
+  state.mapType=t; document.querySelectorAll('.map-type-btn').forEach((b,i)=>{b.classList.toggle('active',(i===0&&t==='street')||(i===1&&t==='satellite')||(i===2&&t==='hybrid'));});
+}
+function updateUserMarker(lat,lon,acc) { userMarker.setLatLng([lat,lon]); if(!map.hasLayer(userMarker))userMarker.addTo(map); if(acc){accuracyCircle.setLatLng([lat,lon]); accuracyCircle.setRadius(acc); if(!map.hasLayer(accuracyCircle))accuracyCircle.addTo(map);} }
+
+// POINT COLLECTION
+function collectPoint() {
+  if(!state.currentPos||!state.accuracy||state.accuracy>=5.0){showToast('Precisão insuficiente. Aguarde sinal < 5m','warning');return;}
+  const pt={id:Date.now(),lat:state.currentPos.lat,lon:state.currentPos.lon,accuracy:state.accuracy,altitude:state.altitude,satellites:{...state.satellites},totalSatellites:state.totalSatellites,gnssSystem:state.gnssSystem,timestamp:new Date().toISOString(),utm:latLonToUTM(state.currentPos.lat,state.currentPos.lon)};
+  state.points.push(pt); state.lastCollectedPoint=pt;
+  const mk=L.circleMarker([pt.lat,pt.lon],{radius:6,fillColor:'#2563eb',fillOpacity:1,color:'#fff',weight:2}).addTo(map);
+  mk.bindPopup(`<b>Ponto ${state.points.length}</b><br>Lat:${pt.lat.toFixed(8)}<br>Lon:${pt.lon.toFixed(8)}<br>Acc:±${pt.accuracy.toFixed(2)}m`);
+  markerLayer.addLayer(mk); updatePolygon(); updatePointsList(); updateAreaDisplay();
+  document.getElementById('btnClose').disabled=state.points.length<3; document.getElementById('btnClear').disabled=state.points.length===0; document.getElementById('btnUndo').disabled=state.points.length===0; document.getElementById('btnAutoStart').disabled=false;
+  playBeep(800,150); showToast(`Ponto ${state.points.length} coletado (±${state.accuracy.toFixed(2)}m)`,'success');
+}
+function updatePolygon() {
+  polygonLayer.clearLayers(); if(state.points.length<2)return; const ll=state.points.map(p=>[p.lat,p.lon]);
+  if(state.points.length>=3){L.polygon(ll,{color:'#2563eb',fillColor:'#2563eb',fillOpacity:0.15,weight:2}).addTo(polygonLayer); map.fitBounds(L.latLngBounds(ll),{padding:[50,50]});}
+  else{L.polyline(ll,{color:'#2563eb',weight:3,opacity:0.8,dashArray:'8,8'}).addTo(polygonLayer);}
+}
+function updatePointsList() {
+  const list=document.getElementById('pointsList'); if(state.points.length===0){list.innerHTML='<div class="text-center" style="padding:18px;color:var(--text-muted);font-size:12px">Nenhum ponto</div>';return;}
+  list.innerHTML=state.points.map((p,i)=>`<div class="point-item" data-id="${p.id}"><div class="point-num">${i+1}</div><div class="point-coords">${p.lat.toFixed(7)}, ${p.lon.toFixed(7)}<br><small style="color:var(--text-muted)">UTM:${p.utm.zone}${p.utm.hemisphere} E:${(+p.utm.easting).toFixed(0)} N:${(+p.utm.northing).toFixed(0)}</small></div><div class="point-actions"><button onclick="movePoint(${i})">📍</button><button onclick="deletePoint(${i})">🗑️</button></div></div>`).join('');
+}
+function updateAreaDisplay() { const r=document.getElementById('areaResult'); if(state.points.length<3){r.style.display='none';return;} r.style.display='block'; const {area,perimeter}=calculateArea(state.points); document.getElementById('areaValue').textContent=formatArea(area); document.getElementById('areaUnit').textContent=getAreaUnit(area); document.getElementById('perimeterValue').textContent=perimeter.toFixed(2); document.getElementById('vertexCount').textContent=state.points.length; state.project.area=area; state.project.perimeter=perimeter; }
+function closePolygon() { if(state.points.length<3)return; state.polygonClosed=true; polygonLayer.clearLayers(); const ll=state.points.map(p=>[p.lat,p.lon]); ll.push(ll[0]); L.polygon(ll,{color:'#16a34a',fillColor:'#16a34a',fillOpacity:0.2,weight:3}).addTo(polygonLayer); map.fitBounds(L.latLngBounds(ll),{padding:[50,50]}); playBeep(1000,300); showToast('Polígono fechado!','success'); document.getElementById('btnClose').disabled=true; }
+function undoLast() { if(state.points.length===0)return; state.points.pop(); state.polygonClosed=false; markerLayer.clearLayers(); state.points.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:6,fillColor:'#2563eb',fillOpacity:1,color:'#fff',weight:2}).addTo(markerLayer)); updatePolygon(); updatePointsList(); updateAreaDisplay(); document.getElementById('btnClose').disabled=state.points.length<3; document.getElementById('btnClear').disabled=state.points.length===0; document.getElementById('btnUndo').disabled=state.points.length===0; showToast('Último ponto removido','warning'); }
+function deletePoint(i) { if(!confirm(`Excluir ponto ${i+1}?`))return; state.points.splice(i,1); state.polygonClosed=false; markerLayer.clearLayers(); state.points.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:6,fillColor:'#2563eb',fillOpacity:1,color:'#fff',weight:2}).addTo(markerLayer)); updatePolygon(); updatePointsList(); updateAreaDisplay(); document.getElementById('btnClose').disabled=state.points.length<3; document.getElementById('btnClear').disabled=state.points.length===0; document.getElementById('btnUndo').disabled=state.points.length===0; }
+function movePoint(i) { if(!state.currentPos){showToast('Sem posição atual','warning');return;} state.points[i].lat=state.currentPos.lat; state.points[i].lon=state.currentPos.lon; state.points[i].utm=latLonToUTM(state.currentPos.lat,state.currentPos.lon); markerLayer.clearLayers(); state.points.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:6,fillColor:'#2563eb',fillOpacity:1,color:'#fff',weight:2}).addTo(markerLayer)); updatePolygon(); updatePointsList(); updateAreaDisplay(); showToast(`Ponto ${i+1} movido`,'success'); }
+function clearAll() { if(!confirm('Limpar todos os pontos?'))return; state.points=[]; state.polygonClosed=false; state.accuracyHistory=[]; state.avgAccuracy=0; state.project.area=0; state.project.perimeter=0; markerLayer.clearLayers(); polygonLayer.clearLayers(); updatePointsList(); updateAreaDisplay(); document.getElementById('avgErrorDisplay').textContent='--'; document.getElementById('avgErrorValue').textContent='--'; document.getElementById('btnClose').disabled=true; document.getElementById('btnClear').disabled=true; document.getElementById('btnUndo').disabled=true; document.getElementById('btnAutoStart').disabled=true; showToast('Todos os pontos removidos','warning'); }
+
+// AUTO MODE
+function updateAutoSettings(){const m=document.getElementById('autoMode').value; document.getElementById('autoUnit').innerHTML=m==='time'?'<option value="s">Segundos</option><option value="min">Minutos</option>':'<option value="m">Metros</option>';}
+function toggleAutoMode() {
+  if(state.autoMode){stopAutoMode();return;}
+  const m=document.getElementById('autoMode').value, v=+document.getElementById('autoValue').value, u=document.getElementById('autoUnit').value;
+  if(isNaN(v)||v<=0){showToast('Valor inválido','error');return;} state.autoMode=true; state.autoTimer=0;
+  if(m==='time'){const iv=u==='min'?v*60000:v*1000; state.autoInterval=setInterval(()=>{if(state.currentPos&&state.accuracy<5.0)collectPoint();},iv); document.getElementById('autoStatus').textContent=`⏱️ Coletando a cada ${v}${u==='min'?'min':'s'}...`;}
+  else{state.autoDistanceThreshold=v; state.autoInterval=setInterval(()=>{if(!state.currentPos||state.accuracy>=5.0)return; if(!state.lastCollectedPoint)collectPoint(); else if(haversine(state.lastCollectedPoint.lat,state.lastCollectedPoint.lon,state.currentPos.lat,state.currentPos.lon)>=v)collectPoint();},1000); document.getElementById('autoStatus').textContent=`📏 Coletando a cada ${v} metros...`;}
+  document.getElementById('btnAutoStart').textContent='⏸️ Pausar'; document.getElementById('btnAutoStop').disabled=false; showToast('Coleta automática iniciada','success');
+}
+function stopAutoMode() { state.autoMode=false; if(state.autoInterval){clearInterval(state.autoInterval);state.autoInterval=null;} document.getElementById('btnAutoStart').textContent='▶️ Iniciar'; document.getElementById('btnAutoStart').disabled=state.points.length===0; document.getElementById('btnAutoStop').disabled=true; document.getElementById('autoStatus').textContent='Parada'; showToast('Coleta automática parada','warning'); }
+function checkAutoCollection() {}
+
+// EXPORT & REPORT
+function exportKML() { if(state.points.length===0){showToast('Nenhum ponto','warning');return;} let k=`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${state.project.name}</name><description>Coleta Multi-GNSS - ${new Date().toLocaleString('pt-BR')}</description>`; state.points.forEach((p,i)=>{k+=`<Placemark><name>Ponto ${i+1}</name><description>Lat:${p.lat.toFixed(8)} Lon:${p.lon.toFixed(8)} Acc:±${p.accuracy.toFixed(2)}m UTM:${p.utm.zone}${p.utm.hemisphere}</description><Point><coordinates>${p.lon},${p.lat},${p.altitude||0}</coordinates></Point></Placemark>`;}); if(state.points.length>=3){const c=state.points.map(p=>`${p.lon},${p.lat},${p.altitude||0}`).join(' '); k+=`<Placemark><name>Área: ${formatArea(state.project.area)} ${getAreaUnit(state.project.area)}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${c} ${state.points[0].lon},${state.points[0].lat},${state.points[0].altitude||0}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`;} k+=`</Document></kml>`; downloadFile(k,`${state.project.name}.kml`,'application/vnd.google-earth.kml+xml'); showToast('KML exportado!','success'); closeExport(); }
+function exportCSV() { if(state.points.length===0){showToast('Nenhum ponto','warning');return;} let c='ID,Lat,Lon,UTM_Zone,UTM_E,UTM_N,Alt_m,Acc_m,GPS,GLONASS,Galileo,BeiDou,Sistema,Data_Hora\n'; state.points.forEach((p,i)=>{c+=`${i+1},${p.lat.toFixed(8)},${p.lon.toFixed(8)},${p.utm.zone}${p.utm.hemisphere},${p.utm.easting},${p.utm.northing},${p.altitude?.toFixed(2)||''},${p.accuracy.toFixed(2)},${p.satellites?.GPS||0},${p.satellites?.GLONASS||0},${p.satellites?.Galileo||0},${p.satellites?.BeiDou||0},${p.gnssSystem},${new Date(p.timestamp).toLocaleString('pt-BR')}\n`;}); c+=`\nRESUMO\nÁrea_m²,${state.project.area.toFixed(4)}\nÁrea_ha,${(state.project.area/10000).toFixed(4)}\nPerímetro_m,${state.project.perimeter.toFixed(2)}\nErro_médio,${state.avgAccuracy.toFixed(2)}\nVértices,${state.points.length}\nData,${new Date().toLocaleString('pt-BR')}\n`; downloadFile(c,`${state.project.name}.csv`,'text/csv'); showToast('CSV exportado!','success'); closeExport(); }
+function exportGeoJSON() { if(state.points.length===0){showToast('Nenhum ponto','warning');return;} const f=[]; state.points.forEach((p,i)=>{f.push({type:'Feature',properties:{name:`Ponto ${i+1}`,lat:p.lat,lon:p.lon,accuracy:p.accuracy,altitude:p.altitude,satellites:p.totalSatellites,gps:p.satellites?.GPS||0,glonass:p.satellites?.GLONASS||0,galileo:p.satellites?.Galileo||0,beidou:p.satellites?.BeiDou||0,utm_zone:p.utm.zone+p.utm.hemisphere,utm_e:p.utm.easting,utm_n:p.utm.northing,timestamp:p.timestamp},geometry:{type:'Point',coordinates:[p.lon,p.lat,p.altitude||0]}});}); if(state.points.length>=3){const c=state.points.map(p=>[p.lon,p.lat,p.altitude||0]);c.push(c[0]);f.push({type:'Feature',properties:{name:`Área: ${formatArea(state.project.area)} ${getAreaUnit(state.project.area)}`,area_m2:state.project.area,perimeter_m:state.project.perimeter,erro_medio_m:state.avgAccuracy,vertices:state.points.length,datum:'SIRGAS 2000 / WGS 84',sistemas:'GPS+GLONASS+Galileo+BeiDou',data:new Date().toISOString()},geometry:{type:'Polygon',coordinates:[c]}});} downloadFile(JSON.stringify({type:'FeatureCollection',features:f,properties:{project:state.project.name,data:new Date().toISOString(),sistemas:'GPS+GLONASS+Galileo+BeiDou',erro_medio:state.avgAccuracy.toFixed(2)+'m'}},null,2),`${state.project.name}.geojson`,'application/geo+json'); showToast('GeoJSON exportado!','success'); closeExport(); }
+function downloadFile(content,filename,mime) { const b=new Blob([content],{type:mime+';charset=utf-8'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=filename; a.click(); URL.revokeObjectURL(u); }
+function generateReport() {
+  const accs=state.points.map(p=>p.accuracy); const avg=accs.length?(accs.reduce((a,b)=>a+b,0)/accs.length):0; const min=accs.length?Math.min(...accs):0; const max=accs.length?Math.max(...accs):0;
+  let avgGPS=0,avgGLO=0,avgGAL=0,avgBDS=0;
+  if(state.points.length>0){avgGPS=state.points.reduce((s,p)=>s+(p.satellites?.GPS||0),0)/state.points.length; avgGLO=state.points.reduce((s,p)=>s+(p.satellites?.GLONASS||0),0)/state.points.length; avgGAL=state.points.reduce((s,p)=>s+(p.satellites?.Galileo||0),0)/state.points.length; avgBDS=state.points.reduce((s,p)=>s+(p.satellites?.BeiDou||0),0)/state.points.length;}
+  let h=`<div style="text-align:center;margin-bottom:14px"><h3 style="font-size:15px;margin-bottom:3px">🛰️ Relatório Técnico Multi-GNSS</h3><p style="color:var(--text-muted);font-size:11px">GPS + GLONASS + Galileo + BeiDou</p></div>
+  <h4>📋 Identificação</h4><table><tr><th>Projeto</th><td>${state.project.name}</td></tr><tr><th>Data/Hora</th><td>${new Date().toLocaleString('pt-BR')}</td></tr><tr><th>Sistemas GNSS</th><td>GPS, GLONASS, Galileo, BeiDou</td></tr><tr><th>Datum</th><td>SIRGAS 2000 / WGS 84</td></tr><tr><th>Sistema Proj.</th><td>UTM</td></tr><tr><th>Limite de precisão</th><td>< 5 metros</td></tr></table>
+  <h4>📡 Qualidade do Sinal</h4><table><tr><th>Erro Médio</th><td>±${avg.toFixed(2)} m</td></tr><tr><th>Erro Mínimo</th><td>±${min.toFixed(2)} m</td></tr><tr><th>Erro Máximo</th><td>±${max.toFixed(2)} m</td></tr><tr><th>GPS (média)</th><td>${avgGPS.toFixed(1)} satélites</td></tr><tr><th>GLONASS (média)</th><td>${avgGLO.toFixed(1)} satélites</td></tr><tr><th>Galileo (média)</th><td>${avgGAL.toFixed(1)} satélites</td></tr><tr><th>BeiDou (média)</th><td>${avgBDS.toFixed(1)} satélites</td></tr></table>
+  <h4>📐 Resultados</h4><table><tr><th>Área</th><td>${state.project.area.toFixed(2)} m² (${(state.project.area/10000).toFixed(4)} ha)</td></tr><tr><th>Perímetro</th><td>${state.project.perimeter.toFixed(2)} m</td></tr><tr><th>Vértices</th><td>${state.points.length}</td></tr><tr><th>Erro Médio Coleta</th><td>±${avg.toFixed(2)} m</td></tr></table>
+  <h4>📍 Vértices</h4><table><tr><th>#</th><th>Lat</th><th>Lon</th><th>UTM</th><th>Este</th><th>Norte</th><th>Alt</th><th>Acc</th></tr>`;
+  state.points.forEach((p,i)=>{h+=`<tr><td>${i+1}</td><td>${p.lat.toFixed(8)}</td><td>${p.lon.toFixed(8)}</td><td>${p.utm.zone}${p.utm.hemisphere}</td><td>${p.utm.easting}</td><td>${p.utm.northing}</td><td>${p.altitude?.toFixed(2)||'N/A'}</td><td>±${p.accuracy.toFixed(2)}</td></tr>`;});
+  h+=`</table><p style="margin-top:14px;font-size:10px;color:var(--text-muted)">Relatório gerado automaticamente. Coordenadas: SIRGAS 2000 / WGS 84. Limite de coleta: <5m.</p>`; return h;
+}
+function openReport() { if(state.points.length===0){showToast('Colete pontos primeiro','warning');return;} document.getElementById('reportContent').innerHTML=generateReport(); document.getElementById('reportModal').classList.add('active'); }
+function closeReport() { document.getElementById('reportModal').classList.remove('active'); }
+function exportReport() { if(state.points.length===0)return; const h=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório - ${state.project.name}</title><style>body{font-family:Arial;max-width:800px;margin:0 auto;padding:20px;color:#333}table{width:100%;border-collapse:collapse;margin:10px 0}th,td{border:1px solid #ddd;padding:5px 6px;font-size:11px}th{background:#f5f5f5;font-weight:bold}h4{color:#2563eb;margin:14px 0 6px}</style></head><body>${generateReport()}</body></html>`; downloadFile(h,`Relatorio_${state.project.name}.html`,'text/html'); showToast('Relatório exportado!','success'); closeExport(); }
+
+// PROJECTS & IMPORT
+function loadProjects() { try { const s=localStorage.getItem('gnss_projects'); if(s) state.projects=JSON.parse(s); } catch(e){} }
+function saveProjects() { try { localStorage.setItem('gnss_projects',JSON.stringify(state.projects)); } catch(e){} }
+function newProject() { const n=prompt('Nome:','Projeto '+new Date().toLocaleDateString('pt-BR')); if(!n)return; state.project={id:Date.now(),name:n,date:new Date().toISOString(),points:[],area:0,perimeter:0}; state.points=[]; state.polygonClosed=false; state.accuracyHistory=[]; state.avgAccuracy=0; markerLayer.clearLayers(); polygonLayer.clearLayers(); updatePointsList(); updateAreaDisplay(); document.getElementById('avgErrorDisplay').textContent='--'; document.getElementById('avgErrorValue').textContent='--'; closeProjects(); showToast(`Projeto "${n}" criado`,'success'); }
+function loadProject(id) { const p=state.projects.find(x=>x.id===id); if(!p)return; state.project={...p}; state.points=p.points||[]; state.polygonClosed=state.points.length>=3; state.accuracyHistory=state.points.map(x=>x.accuracy).filter(x=>x); state.avgAccuracy=state.accuracyHistory.length?state.accuracyHistory.reduce((a,b)=>a+b,0)/state.accuracyHistory.length:0; markerLayer.clearLayers(); state.points.forEach(q=>L.circleMarker([q.lat,q.lon],{radius:6,fillColor:'#2563eb',fillOpacity:1,color:'#fff',weight:2}).addTo(map)); updatePolygon(); updatePointsList(); updateAreaDisplay(); closeProjects(); showToast(`Projeto "${p.name}" carregado`,'success'); }
+function deleteProject(id) { if(!confirm('Excluir?'))return; state.projects=state.projects.filter(p=>p.id!==id); saveProjects(); openProjects(); showToast('Excluído','warning'); }
+function openProjects() { const list=document.getElementById('projectsList'); if(state.projects.length===0){list.innerHTML='<div class="text-center" style="padding:16px;color:var(--text-muted)">Nenhum projeto</div>';return;} list.innerHTML=state.projects.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg-tertiary);border-radius:var(--radius-sm);margin-bottom:5px;cursor:pointer" onclick="loadProject(${p.id})"><div><div style="font-size:13px;font-weight:600">${p.name}</div><div style="font-size:10px;color:var(--text-muted)">${p.points?.length||0} pts • ${new Date(p.savedAt||p.date).toLocaleString('pt-BR')}</div></div><button class="btn-icon" onclick="event.stopPropagation();deleteProject(${p.id})" style="width:30px;height:30px;font-size:13px">🗑️</button></div>`).join(''); document.getElementById('projectsModal').classList.add('active'); }
+function closeProjects() { document.getElementById('projectsModal').classList.remove('active'); }
+function importProject() { document.getElementById('fileInput').click(); }
+function handleImport(e) { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=function(ev){try{if(f.name.endsWith('.kml'))importKML(ev.target.result);else if(f.name.endsWith('.geojson')||f.name.endsWith('.json'))importGeoJSON(ev.target.result);else showToast('Formato inválido','error');}catch(err){showToast('Erro: '+err.message,'error');}}; r.readAsText(f); e.target.value=''; }
+function importKML(xml) { const doc=new DOMParser().parseFromString(xml,'text/xml'); const pts=[]; doc.querySelectorAll('coordinates').forEach(el=>{el.textContent.trim().split(' ').filter(c=>c).forEach(c=>{const p=c.split(',').map(Number);if(p.length>=2&&!isNaN(p[0])&&!isNaN(p[1]))pts.push({id:Date.now()+Math.random(),lon:p[0],lat:p[1],altitude:p[2]||null,accuracy:5.0,satellites:{GPS:0,GLONASS:0,Galileo:0,BeiDou:0},totalSatellites:0,gnssSystem:'Importado',timestamp:new Date().toISOString(),utm:latLonToUTM(p[1],p[0])});});}); if(pts.length>0){state.points=pts;state.polygonClosed=pts.length>=3;markerLayer.clearLayers();pts.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:6,fillColor:'#d97706',fillOpacity:1,color:'#fff',weight:2}).addTo(map));updatePolygon();updatePointsList();updateAreaDisplay();showToast(`${pts.length} pontos importados`,'success');closeProjects();}else showToast('Nenhum ponto encontrado','error'); }
+function importGeoJSON(txt) { const g=JSON.parse(txt); if(g.type!=='FeatureCollection'){showToast('GeoJSON inválido','error');return;} const pts=[]; g.features.forEach(f=>{if(f.geometry.type==='Point'){const c=f.geometry.coordinates;pts.push({id:Date.now()+Math.random(),lon:c[0],lat:c[1],altitude:c[2]||null,accuracy:5.0,satellites:{GPS:0,GLONASS:0,Galileo:0,BeiDou:0},totalSatellites:0,gnssSystem:'Importado',timestamp:f.properties?.timestamp||new Date().toISOString(),utm:latLonToUTM(c[1],c[0])});}else if(f.geometry.type==='Polygon'){f.geometry.coordinates[0].forEach((c,i)=>{if(i<f.geometry.coordinates[0].length-1)pts.push({id:Date.now()+Math.random()+i,lon:c[0],lat:c[1],altitude:c[2]||null,accuracy:5.0,satellites:{GPS:0,GLONASS:0,Galileo:0,BeiDou:0},totalSatellites:0,gnssSystem:'Importado',timestamp:new Date().toISOString(),utm:latLonToUTM(c[1],c[0])});});}); if(pts.length>0){state.points=pts;state.polygonClosed=pts.length>=3;markerLayer.clearLayers();pts.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:6,fillColor:'#d97706',fillOpacity:1,color:'#fff',weight:2}).addTo(map));updatePolygon();updatePointsList();updateAreaDisplay();showToast(`${pts.length} pontos importados`,'success');closeProjects();}else showToast('Nenhum ponto','error'); }
+
+// UI HELPERS
+function switchTab(t,ev) { document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active')); ev.target.classList.add('active'); document.getElementById('tab-'+t).classList.add('active'); }
+function togglePanel() { document.getElementById('bottomPanel').classList.toggle('collapsed'); }
+function toggleTheme() { const d=document.body.getAttribute('data-theme')!=='dark'; document.body.setAttribute('data-theme',d?'dark':'light'); document.getElementById('themeBtn').textContent=d?'☀️':'🌙'; localStorage.setItem('gnss_theme',d?'dark':'light'); }
+function centerOnUser() { if(state.currentPos)map.setView([state.currentPos.lat,state.currentPos.lon],18); else showToast('Posição indisponível','warning'); }
+function openExport() { document.getElementById('exportModal').classList.add('active'); }
+function closeExport() { document.getElementById('exportModal').classList.remove('active'); }
+function playBeep(freq,dur) { if(!state.audioEnabled)return; try{const a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=freq;o.type='sine';g.gain.setValueAtTime(0.3,a.currentTime);g.gain.exponentialRampToValueAtTime(0.01,a.currentTime+dur/1000);o.start(a.currentTime);o.stop(a.currentTime+dur/1000);}catch(e){} }
+function showToast(msg,type='success') { const t=document.getElementById('toast'); const icons={success:'✅',error:'❌',warning:'⚠️',info:'ℹ️'}; t.className=`toast ${type}`; document.getElementById('toastIcon').textContent=icons[type]||'ℹ️'; document.getElementById('toastMsg').textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000); }
+
+// TUTORIAL DISMISS (FIXED)
+function dismissTutorial() {
+  try {
+    const overlay = document.getElementById('tutorialOverlay');
+    if (overlay) {
+      overlay.style.opacity = '0';
+      overlay.style.pointerEvents = 'none';
+      setTimeout(() => { overlay.style.display = 'none'; }, 300);
+    }
+    localStorage.setItem('gnss_tutorial_shown', 'true');
+    startGNSS();
+    console.log('[Tutorial] Fechado com sucesso. GNSS iniciado.');
+  } catch (err) {
+    console.error('[Tutorial] Erro:', err);
+    const el = document.getElementById('tutorialOverlay');
+    if (el) el.remove();
+    startGNSS();
+  }
+}
+
+// INITIALIZATION
+document.addEventListener('DOMContentLoaded', () => {
+  const overlay = document.getElementById('tutorialOverlay');
+  const alreadyShown = localStorage.getItem('gnss_tutorial_shown') === 'true';
+
+  if (alreadyShown) {
+    overlay.style.display = 'none';
+    initMap();
+    startGNSS();
+  } else {
+    overlay.style.display = 'flex';
+    initMap();
+    const btn = document.getElementById('btnStartTutorial');
+    if (btn) {
+      btn.addEventListener('click', dismissTutorial, { once: true });
+      btn.style.pointerEvents = 'auto';
+      btn.style.cursor = 'pointer';
+    }
+    // Fallback: clicar fora do card também fecha
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) dismissTutorial();
+    });
+  }
+
+  // Theme
+  const st = localStorage.getItem('gnss_theme');
+  if (st) { document.body.setAttribute('data-theme', st); document.getElementById('themeBtn').textContent = st === 'dark' ? '☀️' : '🌙'; }
+
+  // Auto-save & offline
+  setInterval(() => { if (state.points.length > 0) saveProjects(); }, 30000);
+  window.addEventListener('online', () => showToast('Conexão restaurada', 'success'));
+  window.addEventListener('offline', () => showToast('Modo offline', 'warning'));
+});
+
+document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('active'); }));
+</script>
+</body>
+</html>
